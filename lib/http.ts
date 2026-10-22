@@ -71,13 +71,22 @@ export async function fetchText(url: string, opts: FetchOptions = {}): Promise<F
       body = new URLSearchParams(opts.form).toString();
       headers["Content-Type"] = "application/x-www-form-urlencoded";
     }
-    const res = await fetch(url, {
-      method: opts.method ?? (body ? "POST" : "GET"),
-      headers,
-      body,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      cache: "no-store",
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: opts.method ?? (body ? "POST" : "GET"),
+        headers,
+        body,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        cache: "no-store",
+      });
+    } catch (e) {
+      // Node reports network failures as a bare "fetch failed"; the useful part
+      // (ECONNRESET, UND_ERR_CONNECT_TIMEOUT, ...) is in `cause`.
+      const cause = (e as { cause?: { code?: string; message?: string } }).cause;
+      const detail = cause?.code ?? cause?.message ?? (e as Error).message;
+      throw new Error(`could not reach ${host} (${detail})`);
+    }
     const text = await res.text();
     if (!res.ok) throw new Error(`${res.status} from ${host}`);
     return { text, cookies: res.headers.getSetCookie?.() ?? [], status: res.status };
