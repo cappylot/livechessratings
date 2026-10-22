@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { GradientBackground } from "@/components/GradientBackground";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,7 +29,8 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <header className="border-b border-border bg-surface">
+        <GradientBackground />
+        <header className="sticky top-0 z-10 border-b border-border bg-surface/70 backdrop-blur-md">
           <div className="mx-auto flex max-w-5xl items-center gap-2 px-4 py-3">
             <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
               <span aria-hidden className="text-xl text-accent">♞</span> FIDE Live Rating
@@ -36,7 +38,7 @@ export default function RootLayout({
           </div>
         </header>
         <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
-        <footer className="mx-auto max-w-5xl px-4 pb-10 text-xs text-muted">
+        <footer className="mx-auto max-w-5xl px-4 pb-10 text-center text-xs text-muted">
           Data from ratings.fide.com and chess-results.com. Live ratings are unofficial estimates.
         </footer>
       </body>

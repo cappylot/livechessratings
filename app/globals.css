@@ -48,3 +48,102 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
+
+/* ---------- animated background ---------- */
+
+html {
+  background: var(--background);
+}
+
+body {
+  background: transparent;
+}
+
+.gradient-fallback {
+  background:
+    radial-gradient(60% 60% at 15% 20%, #ffcfb3 0%, transparent 70%),
+    radial-gradient(55% 55% at 85% 30%, #dccbec 0%, transparent 70%),
+    radial-gradient(70% 60% at 50% 90%, #f2dcc0 0%, transparent 70%),
+    var(--background);
+}
+
+.gradient-scrim {
+  background: color-mix(in srgb, var(--background) 40%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .gradient-fallback {
+    background:
+      radial-gradient(60% 60% at 15% 20%, #8a5a4f 0%, transparent 70%),
+      radial-gradient(55% 55% at 85% 30%, #5e4f7a 0%, transparent 70%),
+      radial-gradient(70% 60% at 50% 90%, #6e5c48 0%, transparent 70%),
+      var(--background);
+  }
+  .gradient-scrim {
+    background: color-mix(in srgb, var(--background) 50%, transparent);
+  }
+}
+
+/* ---------- loading animations ---------- */
+
+@keyframes shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+/* Placeholder block with a light sweeping across it. */
+.skeleton {
+  border-radius: 0.375rem;
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--surface) 70%, transparent) 50%,
+      transparent 100%
+    )
+    color-mix(in srgb, var(--foreground) 10%, transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+/* Light sweeping across loading text. */
+.text-shimmer {
+  color: transparent;
+  background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 40%, var(--foreground) 50%, var(--muted) 60%, var(--muted) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: shimmer 2.2s linear infinite;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Content arriving; set --i on list items for a stagger. */
+.animate-in {
+  animation: rise-in 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .text-shimmer,
+  .animate-in {
+    animation: none;
+  }
+  .text-shimmer {
+    color: var(--muted);
+    background: none;
+  }
+}

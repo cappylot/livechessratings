@@ -41,14 +41,14 @@ export function TournamentTable({
 
   if (!tournaments.length) {
     return (
-      <div className="rounded-xl border border-border bg-surface p-5 text-muted">
+      <div className="animate-in rounded-xl border border-border bg-surface/75 p-5 text-muted backdrop-blur-md">
         No tournaments on chess-results since the previous rating list.
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-surface">
+    <div className="overflow-x-auto rounded-xl border border-border bg-surface/75 backdrop-blur-md">
       <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted">
@@ -62,7 +62,7 @@ export function TournamentTable({
           </tr>
         </thead>
         <tbody>
-          {tournaments.map((t) => {
+          {tournaments.map((t, i) => {
             const k = key(t);
             const on = enabled.has(k);
             const type = t.type;
@@ -75,7 +75,10 @@ export function TournamentTable({
             const isOpen = open.has(k);
             return (
               <Fragment key={k}>
-                <tr className={`border-b border-border last:border-0 ${on ? "" : "text-muted"}`}>
+                <tr
+                  className={`animate-in border-b border-border last:border-0 ${on ? "" : "text-muted"}`}
+                  style={{ "--i": Math.min(i, 12) } as React.CSSProperties}
+                >
                   <td className="px-3 py-3 align-top">
                     <input
                       type="checkbox"
@@ -124,7 +127,7 @@ export function TournamentTable({
                   </td>
                 </tr>
                 {isOpen && (
-                  <tr className="border-b border-border bg-surface-2/60">
+                  <tr className="animate-in border-b border-border bg-surface-2/60">
                     <td />
                     <td colSpan={6} className="px-3 py-3">
                       <GameList t={t} own={own} />

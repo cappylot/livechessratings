@@ -10,10 +10,15 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "@shadergradient/react": "2.4.20",
+    "camera-controls": "3.1.2",
     "cheerio": "^1.1.2",
     "next": "15.5.28",
     "react": "19.1.10",
-    "react-dom": "19.1.10"
+    "react-dom": "19.1.10",
+    "three": "0.186.1",
+    "three-stdlib": "2.36.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -21,6 +26,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "0.186.0",
     "eslint": "^9",
     "eslint-config-next": "15.5.28",
     "tailwindcss": "^4",

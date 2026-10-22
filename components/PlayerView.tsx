@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Spinner } from "./Spinner";
 import { key, summarize, type TypeSummary } from "@/lib/elo";
 import { RATING_TYPES, type LiveResponse, type Profile, type RatingType } from "@/lib/types";
 import { TournamentTable } from "./TournamentTable";
@@ -53,7 +54,7 @@ export function PlayerView({ fideId }: { fideId: string }) {
 
   if (profileError) {
     return (
-      <div className="rounded-xl border border-border bg-surface p-6">
+      <div className="animate-in rounded-xl border border-border bg-surface/75 p-6 backdrop-blur-md">
         <p className="text-down">{profileError}</p>
       </div>
     );
@@ -80,12 +81,12 @@ export function PlayerView({ fideId }: { fideId: string }) {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-xl font-semibold tracking-tight">Recent tournaments</h2>
           {live && (
-            <p className="text-sm text-muted">
+            <p className="animate-in text-sm text-muted">
               Latest official list: <span className="text-foreground">{formatPeriod(live.lastList)}</span>
             </p>
           )}
         </div>
-        {liveError && <p className="text-down">{liveError}</p>}
+        {liveError && <p className="animate-in text-down">{liveError}</p>}
         {live?.warnings.map((w) => (
           <p key={w} className="text-sm text-muted">
             {w}
@@ -102,10 +103,15 @@ export function PlayerView({ fideId }: { fideId: string }) {
 
 function ProfileHeader({ profile, fideId }: { profile: Profile | null; fideId: string }) {
   if (!profile) {
-    return <div className="h-16 animate-pulse rounded-xl bg-surface-2" />;
+    return (
+      <section className="space-y-3" aria-busy="true" aria-label="Loading player">
+        <div className="skeleton h-9 w-64 max-w-full" />
+        <div className="skeleton h-4 w-96 max-w-full" />
+      </section>
+    );
   }
   return (
-    <section className="flex flex-wrap items-end justify-between gap-4">
+    <section className="animate-in flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">
           {profile.title && <span className="mr-2 text-accent">{abbreviateTitle(profile.title)}</span>}
@@ -159,25 +165,41 @@ function RatingCard({
   const rounded = Math.round(change);
   const hasGames = (summary?.games ?? 0) > 0;
   return (
-    <div className="rounded-xl border border-border bg-surface p-5">
+    <div className="rounded-xl border border-border bg-surface/75 p-5 backdrop-blur-md">
       <p className="text-sm font-medium text-muted">{TYPE_LABEL[type]}</p>
-      <div className="mt-2 flex items-baseline gap-3">
-        <span className="font-mono text-4xl font-semibold tabular-nums">
-          {official === undefined ? "…" : official === null ? "—" : hasGames ? summary!.live : official}
-        </span>
+      <div className="mt-2 flex h-10 items-baseline gap-3">
+        {official === undefined ? (
+          <div className="skeleton h-10 w-28" aria-hidden />
+        ) : (
+          <span
+            key={hasGames ? `live-${summary!.live}` : "official"}
+            className="animate-in font-mono text-4xl font-semibold tabular-nums"
+          >
+            {official === null ? "—" : hasGames ? summary!.live : official}
+          </span>
+        )}
         {hasGames && official !== null && (
-          <span className={`font-mono text-lg tabular-nums ${change >= 0 ? "text-up" : "text-down"}`}>
+          <span
+            key={change.toFixed(1)}
+            className={`animate-in font-mono text-lg tabular-nums ${change >= 0 ? "text-up" : "text-down"}`}
+          >
             {change >= 0 ? "+" : "−"}
             {Math.abs(change).toFixed(1)}
           </span>
         )}
       </div>
-      <p className="mt-1 text-sm text-muted">
-        {official === null || official === undefined
-          ? "Unrated"
-          : loading
-            ? `Official ${official} · checking tournaments…`
-            : hasGames
+      <p className="mt-1 flex items-center gap-1.5 text-sm text-muted">
+        {official === undefined ? (
+          <span className="skeleton inline-block h-3.5 w-40" aria-hidden />
+        ) : official === null ? (
+          "Unrated"
+        ) : loading ? (
+          <>
+            <span>Official {official} ·</span>
+            <Spinner className="size-3.5 text-accent" />
+            <span className="text-shimmer">checking tournaments…</span>
+          </>
+        ) : hasGames
               ? `Official ${official} · ${summary!.games} game${summary!.games === 1 ? "" : "s"} pending · K ${summary!.k}`
               : `Official ${official} · no pending games`}
       </p>
@@ -186,12 +208,39 @@ function RatingCard({
   );
 }
 
+const LOADING_STEPS = [
+  "Searching chess-results…",
+  "Reading tournament details…",
+  "Looking up opponents' ratings…",
+  "Calculating rating changes…",
+];
+
 function LoadingTournaments() {
+  // Timed hints, not real progress: the API answers once everything is done.
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setStep((s) => Math.min(s + 1, LOADING_STEPS.length - 1)), 4000);
+    return () => clearInterval(t);
+  }, []);
   return (
-    <div className="space-y-2 rounded-xl border border-border bg-surface p-5">
-      <p className="text-sm text-muted">Searching chess-results and checking each tournament… this can take up to a minute.</p>
+    <div className="space-y-3 rounded-xl border border-border bg-surface/75 p-5 backdrop-blur-md">
+      <div role="status" aria-live="polite" className="flex items-center gap-2 text-sm">
+        <Spinner className="size-4 text-accent" />
+        <span key={step} className="animate-in text-shimmer">
+          {LOADING_STEPS[step]}
+        </span>
+        <span className="ml-auto hidden text-xs text-muted sm:inline">can take up to a minute</span>
+      </div>
       {[0, 1, 2].map((i) => (
-        <div key={i} className="h-10 animate-pulse rounded-lg bg-surface-2" />
+        <div key={i} className="flex items-center gap-3 py-1" aria-hidden>
+          <div className="skeleton size-4" />
+          <div className="flex-1 space-y-2">
+            <div className="skeleton h-4" style={{ width: `${60 - i * 12}%` }} />
+            <div className="skeleton h-3 w-24" />
+          </div>
+          <div className="skeleton h-4 w-16" />
+          <div className="skeleton h-4 w-12" />
+        </div>
       ))}
     </div>
   );
