@@ -9,7 +9,7 @@ import {
   type CrTournamentInfo,
 } from "./chessResults";
 import { kFactor } from "./elo";
-import { getHistory, getProfile, getRatedEvents } from "./fide";
+import { getHistory, getProfile, getRatedEvents, getRatingsById } from "./fide";
 import { classifyTimeControl } from "./timeControl";
 import {
   RATING_TYPES,
@@ -76,6 +76,13 @@ async function buildGames(
   info: CrTournamentInfo,
   type: RatingType,
   lookupRatings: boolean,
+  /**
+   * "card": the opponents' chess-results cards list the right FIDE rating.
+   * "fide": they don't (e.g. a rapid event listing standard ratings), so look
+   * each opponent up on ratings.fide.com.
+   * "unverified": cards are all we have, but they may hold standard ratings.
+   */
+  ratingSource: "card" | "fide" | "unverified",
 ): Promise<LiveGame[]> {
   return Promise.all(
     games.map(async (g): Promise<LiveGame> => {
@@ -100,11 +107,20 @@ async function buildGames(
       // The opponent's own chess-results card has their FIDE ("international") rating
       // for this tournament's rating type. Reading it there keeps the number of
       // requests to ratings.fide.com low, which drops connections under load.
+      if (entry?.fideId && lookupRatings && ratingSource === "fide") {
+        const row = await getRatingsById(entry.fideId).catch(() => null);
+        if (row) {
+          base.opponentRating = row[type];
+          base.ratingSource = "fide";
+          if (base.opponentRating === null) base.skip = `opponent has no FIDE ${type} rating`;
+          return base;
+        }
+      }
       if (entry && lookupRatings) {
         const card = await getPlayerCard(info.tnr, entry.sno).catch(() => null);
         if (card && similarity(card.name, g.name) >= 0.5) {
           base.opponentRating = card.ratingInternational;
-          base.ratingSource = "fide";
+          base.ratingSource = ratingSource === "card" ? "fide" : "chess-results";
           if (base.opponentRating === null) base.skip = `opponent has no FIDE ${type} rating`;
           return base;
         }
@@ -125,6 +141,7 @@ async function buildTournament(
   lastList: string,
   rated: Record<RatingType, RatedEvent[]>,
   fideAvailable: boolean,
+  official: Record<RatingType, number | null>,
 ): Promise<LiveTournament> {
   const base: LiveTournament = {
     tnr: row.tnr,
@@ -194,7 +211,18 @@ async function buildTournament(
       reason = "Ended just before the latest list but isn't in it — probably goes into the next one";
     }
 
-    const games = await buildGames(card.games, info, type, status === "pending" || status === "not-fide");
+    // Organisers of rapid/blitz events sometimes list standard ratings. Trust the
+    // cards only if the player's own card shows their rating for this type.
+    const cardsOk =
+      type === "standard" || (official[type] !== null && card.ratingInternational === official[type]);
+    const ratingSource = cardsOk ? "card" : fideAvailable ? "fide" : "unverified";
+    const games = await buildGames(
+      card.games,
+      info,
+      type,
+      status === "pending" || status === "not-fide",
+      ratingSource,
+    );
     return { ...base, type: base.type ?? "standard", status, reason, games };
   } catch (e) {
     return { ...base, status: "error", reason: `Could not load tournament: ${(e as Error).message}` };
@@ -251,7 +279,7 @@ export async function buildLive(fideId: string): Promise<LiveResponse> {
     candidates.length = MAX_TOURNAMENTS;
   }
 
-  const tournaments = await Promise.all(candidates.map((r) => buildTournament(r, lastList, rated, fideAvailable)));
+  const tournaments = await Promise.all(candidates.map((r) => buildTournament(r, lastList, rated, fideAvailable, official)));
   tournaments.sort((a, b) => b.endDate.localeCompare(a.endDate));
 
   if (!fideAvailable) {
@@ -259,14 +287,21 @@ export async function buildLive(fideId: string): Promise<LiveResponse> {
     // published rating, which the player's chess-results card shows.
     for (const t of RATING_TYPES) {
       const source = tournaments.find(
-        (x) => x.type === t && x.playerRating && x.status !== "test" && (x.startDate ?? x.endDate) >= `${lastList}-01`,
+        (x) =>
+          x.type === t &&
+          x.playerRating &&
+          x.status !== "test" &&
+          (x.startDate ?? x.endDate) >= `${lastList}-01` &&
+          // A rapid/blitz card showing the standard rating is a standard rating.
+          (t === "standard" || x.playerRating !== official.standard),
       );
       official[t] = source?.playerRating ?? null;
     }
     warnings.push(
       "ratings.fide.com is not reachable from this server right now. Official ratings are taken from the player's " +
         "chess-results entries, tournaments that ended before this month are assumed to be rated already, and " +
-        "the K-factor is estimated.",
+        "the K-factor is estimated. Opponent ratings in rapid and blitz events can't be checked and may be " +
+        "standard ratings (marked *).",
     );
   }
 

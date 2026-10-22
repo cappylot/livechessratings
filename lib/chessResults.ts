@@ -278,6 +278,10 @@ export type CrPlayer = { fideId: string; name: string; fed: string; tournaments:
 /** Group search rows (one per tournament) into players with a FIDE ID, most active first. */
 export function groupPlayers(rows: CrSearchRow[]): CrPlayer[] {
   const byId = new Map<string, CrPlayer>();
+  const today = new Date().toISOString().slice(0, 10);
+  // Prefer a past tournament over a registration for a future one.
+  const better = (date: string, than: string) =>
+    date <= today ? than > today || date > than : than > today && date < than;
   for (const r of rows) {
     if (!/^\d+$/.test(r.fideId) || r.fideId === "0") continue;
     const p = byId.get(r.fideId);
@@ -285,7 +289,7 @@ export function groupPlayers(rows: CrSearchRow[]): CrPlayer[] {
       byId.set(r.fideId, { fideId: r.fideId, name: r.playerName, fed: r.fed, tournaments: 1, lastPlayed: r.endDate });
     } else {
       p.tournaments++;
-      if (r.endDate > p.lastPlayed) {
+      if (better(r.endDate, p.lastPlayed)) {
         p.lastPlayed = r.endDate;
         p.name = r.playerName;
         p.fed = r.fed || p.fed;
@@ -312,9 +316,11 @@ export function searchByName(query: string): Promise<CrPlayer[]> {
     }
     const words = q.split(" ");
     if (words.length === 1) return search(q);
-    // "Magnus Carlsen": try the last word as last name first, then the whole text.
+    // "Magnus Carlsen" or "Carlsen Magnus": try both orders, then the whole text as last name.
     const asFirstLast = await search(words.at(-1)!, words.slice(0, -1).join(" "));
-    return asFirstLast.length ? asFirstLast : search(q);
+    if (asFirstLast.length) return asFirstLast;
+    const asLastFirst = await search(words[0], words.slice(1).join(" "));
+    return asLastFirst.length ? asLastFirst : search(q);
   });
 }
 

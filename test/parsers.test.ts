@@ -97,3 +97,10 @@ test("groupPlayers merges one row per tournament into players", async () => {
   expect(players[0]).toMatchObject({ fideId: "16241657", name: "Albayrak, Berrak", fed: "GER", lastPlayed: "2026-09-27" });
   expect(players[0].tournaments).toBeGreaterThan(5);
 });
+
+test("groupPlayers prefers past tournaments over future registrations", async () => {
+  const { groupPlayers } = await import("@/lib/chessResults");
+  const row = (endDate: string) => ({ tnr: "1", snr: "1", playerName: "X", fideId: "1", fed: "GER", tournament: "T", endDate, rounds: 9 });
+  expect(groupPlayers([row("2099-01-01"), row("2020-05-01"), row("2021-03-01")])[0].lastPlayed).toBe("2021-03-01");
+  expect(groupPlayers([row("2099-01-01"), row("2098-01-01")])[0].lastPlayed).toBe("2098-01-01");
+});
