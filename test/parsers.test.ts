@@ -26,7 +26,7 @@ describe("FIDE parsers", () => {
   });
   test("history", () => {
     const h = parseHistory(fx("fide-history.json"));
-    expect(h.at(-1)).toMatchObject({ period: "2026-10", standard: 1953, standardGames: 5, rapid: 1854 });
+    expect(h.at(-1)).toMatchObject({ period: "2026-10", fed: "GER", standard: 1953, standardGames: 5, rapid: 1854 });
     expect(h[0].period < h.at(-1)!.period).toBe(true);
   });
   test("calculations", () => {

@@ -22,6 +22,8 @@ export type Profile = PlayerSummary & {
 export type HistoryEntry = {
   /** "YYYY-MM" of the published list */
   period: string;
+  /** Federation code at the time, e.g. "GER" */
+  fed: string;
   standard: number | null;
   standardGames: number;
   rapid: number | null;

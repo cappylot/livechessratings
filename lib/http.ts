@@ -7,6 +7,16 @@ const USER_AGENT =
 const TIMEOUT_MS = 30_000;
 const MAX_PER_HOST = 3;
 const CACHE_TTL_MS = 15 * 60 * 1000;
+const RETRY_DELAYS_MS = [500, 1500];
+const RETRYABLE = new Set([
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+]);
 
 type CacheEntry = { expires: number; value: Promise<unknown> };
 const cache = new Map<string, CacheEntry>();
@@ -71,21 +81,29 @@ export async function fetchText(url: string, opts: FetchOptions = {}): Promise<F
       body = new URLSearchParams(opts.form).toString();
       headers["Content-Type"] = "application/x-www-form-urlencoded";
     }
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: opts.method ?? (body ? "POST" : "GET"),
-        headers,
-        body,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-        cache: "no-store",
-      });
-    } catch (e) {
-      // Node reports network failures as a bare "fetch failed"; the useful part
-      // (ECONNRESET, UND_ERR_CONNECT_TIMEOUT, ...) is in `cause`.
-      const cause = (e as { cause?: { code?: string; message?: string } }).cause;
-      const detail = cause?.code ?? cause?.message ?? (e as Error).message;
-      throw new Error(`could not reach ${host} (${detail})`);
+    let res: Response | undefined;
+    for (let attempt = 0; !res; attempt++) {
+      try {
+        res = await fetch(url, {
+          method: opts.method ?? (body ? "POST" : "GET"),
+          headers,
+          body,
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+          cache: "no-store",
+        });
+      } catch (e) {
+        // Node reports network failures as a bare "fetch failed"; the useful part
+        // (ECONNRESET, UND_ERR_CONNECT_TIMEOUT, ...) is in `cause`.
+        const cause = (e as { cause?: { code?: string; message?: string } }).cause;
+        const detail = cause?.code ?? cause?.message ?? (e as Error).message;
+        // ratings.fide.com sometimes drops connections; retry those, but not our own timeout.
+        if (cause?.code && RETRYABLE.has(cause.code) && attempt < RETRY_DELAYS_MS.length) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+          continue;
+        }
+        const { pathname } = new URL(url);
+        throw new Error(`could not reach ${host}${pathname} (${detail})`);
+      }
     }
     const text = await res.text();
     if (!res.ok) throw new Error(`${res.status} from ${host}`);

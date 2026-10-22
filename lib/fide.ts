@@ -65,6 +65,7 @@ export function parseHistory(json: string): HistoryEntry[] {
       if (!y || month < 1) return null;
       return {
         period: `${y}-${String(month).padStart(2, "0")}`,
+        fed: r.country ?? "",
         standard: toRating(r.rating),
         standardGames: parseInt(r.period_games ?? "0", 10) || 0,
         rapid: toRating(r.rapid_rtng),
@@ -118,9 +119,9 @@ export function getProfile(fideId: string): Promise<Profile> {
     const { text } = await fetchText(`${FIDE}/profile/${fideId}`);
     const profile = parseProfile(text, fideId);
     if (!profile.name) throw new Error(`No FIDE player with ID ${fideId}`);
-    // The profile page only shows the federation's full name; the search row has the code.
-    const row = await getRatingsById(fideId).catch(() => null);
-    if (row) profile.fed = row.fed;
+    // The profile page only shows the federation's full name; the history has the code.
+    const history = await getHistory(fideId).catch(() => []);
+    profile.fed = history.at(-1)?.fed ?? "";
     return profile;
   });
 }

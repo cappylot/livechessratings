@@ -3,7 +3,7 @@ import { calcTournament, effectiveK, expectedScore, kFactor, performance, summar
 import type { HistoryEntry, LiveTournament } from "@/lib/types";
 
 const hist = (games: number, peak = 2000): HistoryEntry[] => [
-  { period: "2026-09", standard: peak, standardGames: games, rapid: null, rapidGames: 0, blitz: null, blitzGames: 0 },
+  { period: "2026-09", fed: "GER", standard: peak, standardGames: games, rapid: null, rapidGames: 0, blitz: null, blitzGames: 0 },
 ];
 
 function tournament(own: number, games: Array<[number, number]>): LiveTournament {
