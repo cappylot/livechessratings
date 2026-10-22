@@ -6,6 +6,8 @@ const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 const TIMEOUT_MS = 30_000;
 const MAX_PER_HOST = 3;
+// ratings.fide.com drops new connections when too many arrive from one IP.
+const HOST_LIMITS: Record<string, number> = { "ratings.fide.com": 2 };
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const RETRY_DELAYS_MS = [500, 1500];
 const RETRYABLE = new Set([
@@ -40,7 +42,7 @@ const waiting = new Map<string, Array<() => void>>();
 
 async function acquire(host: string) {
   const n = active.get(host) ?? 0;
-  if (n < MAX_PER_HOST) {
+  if (n < (HOST_LIMITS[host] ?? MAX_PER_HOST)) {
     active.set(host, n + 1);
     return;
   }

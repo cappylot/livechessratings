@@ -5,10 +5,11 @@ import {
   tournamentUrl,
   type CrGame,
   type CrSearchRow,
+  type CrStartEntry,
   type CrTournamentInfo,
 } from "./chessResults";
 import { kFactor } from "./elo";
-import { getHistory, getProfile, getRatedEvents, getRatingsById } from "./fide";
+import { getHistory, getProfile, getRatedEvents } from "./fide";
 import { classifyTimeControl } from "./timeControl";
 import {
   RATING_TYPES,
@@ -63,12 +64,11 @@ function findRated(info: CrTournamentInfo, endDate: string, rated: RatedEvent[])
   return rated.find((r) => r.end && dayDiff(r.end, endDate) <= 3 && similarity(r.name, info.name) >= 0.5);
 }
 
-/** Map a chess-results game row to the opponent's FIDE ID via the starting list. */
-function opponentFideId(game: CrGame, info: CrTournamentInfo): string | null {
+/** Find the opponent of a chess-results game row in the tournament's starting list. */
+function opponentEntry(game: CrGame, info: CrTournamentInfo): CrStartEntry | undefined {
   const bySno = game.sno ? info.startList.find((p) => p.sno === game.sno) : undefined;
-  if (bySno && similarity(bySno.name, game.name) >= 0.5) return bySno.fideId;
-  const byName = info.startList.find((p) => normalize(p.name) === normalize(game.name));
-  return byName?.fideId ?? null;
+  if (bySno && similarity(bySno.name, game.name) >= 0.5) return bySno;
+  return info.startList.find((p) => normalize(p.name) === normalize(game.name));
 }
 
 async function buildGames(
@@ -90,17 +90,20 @@ async function buildGames(
         skip: g.skip,
       };
       if (g.skip) return base;
-      const fid = opponentFideId(g, info);
-      base.opponentFideId = fid;
+      const entry = opponentEntry(g, info);
+      base.opponentFideId = entry?.fideId ?? null;
       // A starting list with FIDE IDs means opponents without one are FIDE-unrated.
-      if (!fid && info.startList.some((p) => p.fideId)) {
+      if (!base.opponentFideId && info.startList.some((p) => p.fideId)) {
         base.skip = "opponent has no FIDE ID";
         return base;
       }
-      if (fid && lookupRatings) {
-        const row = await getRatingsById(fid).catch(() => null);
-        if (row) {
-          base.opponentRating = row[type];
+      // The opponent's own chess-results card has their FIDE ("international") rating
+      // for this tournament's rating type. Reading it there keeps the number of
+      // requests to ratings.fide.com low, which drops connections under load.
+      if (entry && lookupRatings) {
+        const card = await getPlayerCard(info.tnr, entry.sno).catch(() => null);
+        if (card && similarity(card.name, g.name) >= 0.5) {
+          base.opponentRating = card.ratingInternational;
           base.ratingSource = "fide";
           if (base.opponentRating === null) base.skip = `opponent has no FIDE ${type} rating`;
           return base;
@@ -194,25 +197,30 @@ async function buildTournament(
 
 export async function buildLive(fideId: string): Promise<LiveResponse> {
   const warnings: string[] = [];
-  const [profile, history] = await Promise.all([getProfile(fideId), getHistory(fideId).catch(() => [] as HistoryEntry[])]);
+  // ratings.fide.com drops connections under load, so ask it as little as possible:
+  // the history has the official ratings, the profile only adds the birth year.
+  const history = await getHistory(fideId).catch(() => [] as HistoryEntry[]);
+  const latest = history.at(-1);
+  const profile = await getProfile(fideId).catch(() => null);
+  if (!latest && !profile) throw new Error("Could not load the player's ratings from FIDE");
+  if (!profile) warnings.push("FIDE profile unavailable; the junior K-factor rule could not be checked.");
 
-  const lastList = history.at(-1)?.period ?? today().slice(0, 7);
+  const lastList = latest?.period ?? today().slice(0, 7);
   const windowStart = `${previousMonth(lastList)}-01`;
 
-  const official: Record<RatingType, number | null> = {
-    standard: profile.standard,
-    rapid: profile.rapid,
-    blitz: profile.blitz,
-  };
+  const official: Record<RatingType, number | null> = latest
+    ? { standard: latest.standard, rapid: latest.rapid, blitz: latest.blitz }
+    : { standard: profile!.standard, rapid: profile!.rapid, blitz: profile!.blitz };
   const year = new Date().getFullYear();
   const k = Object.fromEntries(
-    RATING_TYPES.map((t) => [t, kFactor(t, official[t], history, profile.birthYear, year)]),
+    RATING_TYPES.map((t) => [t, kFactor(t, official[t], history, profile?.birthYear ?? null, year)]),
   ) as Record<RatingType, KInfo>;
 
   // Tournaments FIDE has already rated in the last two lists.
   const rated = Object.fromEntries(
     await Promise.all(
       RATING_TYPES.map(async (t) => {
+        if (official[t] === null) return [t, []];
         const lists = await Promise.all(
           [lastList, previousMonth(lastList)].map((p) => getRatedEvents(fideId, p, t).catch(() => [])),
         );
