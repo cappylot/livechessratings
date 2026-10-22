@@ -69,10 +69,11 @@ export function PlayerView({ fideId }: { fideId: string }) {
           <RatingCard
             key={t}
             type={t}
-            official={profile ? profile[t] : undefined}
+            official={live ? live.official[t] : profile?.source === "fide" ? profile[t] : undefined}
             summary={summary?.[t]}
             kReason={live?.k[t].reason}
             loading={!live && !liveError}
+            fideAvailable={live?.fideAvailable ?? true}
           />
         ))}
       </section>
@@ -88,7 +89,7 @@ export function PlayerView({ fideId }: { fideId: string }) {
         </div>
         {liveError && <p className="animate-in text-down">{liveError}</p>}
         {live?.warnings.map((w) => (
-          <p key={w} className="text-sm text-muted">
+          <p key={w} className="animate-in rounded-lg bg-surface/75 px-3 py-2 text-sm text-muted backdrop-blur-md">
             {w}
           </p>
         ))}
@@ -154,12 +155,14 @@ function RatingCard({
   summary,
   kReason,
   loading,
+  fideAvailable,
 }: {
   type: RatingType;
   official: number | null | undefined;
   summary?: TypeSummary;
   kReason?: string;
   loading: boolean;
+  fideAvailable: boolean;
 }) {
   const change = summary?.change ?? 0;
   const rounded = Math.round(change);
@@ -192,7 +195,7 @@ function RatingCard({
         {official === undefined ? (
           <span className="skeleton inline-block h-3.5 w-40" aria-hidden />
         ) : official === null ? (
-          "Unrated"
+          fideAvailable ? "Unrated" : "Unknown — FIDE unreachable, no recent games"
         ) : loading ? (
           <>
             <span>Official {official} ·</span>

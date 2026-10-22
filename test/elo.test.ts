@@ -9,7 +9,7 @@ const hist = (games: number, peak = 2000): HistoryEntry[] => [
 function tournament(own: number, games: Array<[number, number]>): LiveTournament {
   return {
     tnr: "1", snr: "1", name: "T", url: "", startDate: null, endDate: "2026-10-18", ongoing: false,
-    type: "standard", timeControl: "", fideEventId: null, status: "pending", chessResultsChange: null,
+    type: "standard", timeControl: "", fideEventId: null, status: "pending", playerRating: own, chessResultsChange: null,
     games: games.map(([opp, res], i) => ({
       round: String(i + 1), opponent: `O${i}`, opponentFideId: null, opponentRating: opp,
       ratingSource: "fide", result: res, rawResult: String(res),
@@ -36,6 +36,10 @@ describe("kFactor", () => {
   test("juniors under 2300 get 40", () => expect(kFactor("standard", 2100, hist(200, 2100), 2010, 2026).base).toBe(40));
   test("adults below 2400 get 20", () => expect(kFactor("standard", 2100, hist(200, 2100), 1990, 2026).base).toBe(20));
   test("anyone who reached 2400 gets 10", () => expect(kFactor("standard", 2350, hist(200, 2410), 1990, 2026).base).toBe(10));
+  test("without FIDE history K is assumed", () => {
+    expect(kFactor("standard", 2100, [], null, 2026).base).toBe(20);
+    expect(kFactor("standard", 2450, [], null, 2026).base).toBe(10);
+  });
   test("rapid and blitz use 20", () => expect(kFactor("blitz", 1500, hist(5, 1500), 2012, 2026).base).toBe(20));
 });
 

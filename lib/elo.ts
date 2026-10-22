@@ -49,6 +49,11 @@ export function kFactor(
   year: number,
 ): KInfo {
   if (type !== "standard") return { base: 20, reason: "rapid/blitz: K = 20" };
+  if (!history.length) {
+    return (rating ?? 0) >= 2400
+      ? { base: 10, reason: "FIDE history unavailable; rated 2400+: K = 10" }
+      : { base: 20, reason: "FIDE history unavailable; assumed K = 20" };
+  }
   const totalGames = history.reduce((s, h) => s + h.standardGames, 0);
   const everAbove2400 = history.some((h) => (h.standard ?? 0) >= 2400) || (rating ?? 0) >= 2400;
   if (everAbove2400) return { base: 10, reason: "has reached 2400: K = 10" };

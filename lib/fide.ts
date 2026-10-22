@@ -2,8 +2,13 @@ import * as cheerio from "cheerio";
 import { cached, fetchText } from "./http";
 import type { HistoryEntry, PlayerSummary, Profile, RatedEvent, RatingType } from "./types";
 
-const FIDE = "https://ratings.fide.com";
+// Overridable so a proxy can be used, or an unreachable address to test the fallbacks.
+const FIDE = process.env.FIDE_BASE_URL ?? "https://ratings.fide.com";
 const AJAX = { "X-Requested-With": "XMLHttpRequest", Referer: `${FIDE}/` };
+
+// ratings.fide.com blocks shared cloud IPs (e.g. Vercel's) from time to time.
+// Fail fast and stop asking for a while, so callers can fall back to chess-results.
+const FIDE_FETCH = { timeoutMs: 6000, retry: false, circuitBreaker: true } as const;
 
 const toRating = (s: string | undefined | null): number | null => {
   const n = parseInt((s ?? "").trim(), 10);
@@ -102,7 +107,7 @@ export function searchPlayers(query: string): Promise<PlayerSummary[]> {
   return cached(`fide:search:${q.toLowerCase()}`, async () => {
     const { text } = await fetchText(
       `${FIDE}/incl_search_l.php?search=${encodeURIComponent(q)}&simple=1`,
-      { headers: AJAX },
+      { ...FIDE_FETCH, headers: AJAX },
     );
     return parseSearch(text);
   });
@@ -116,7 +121,7 @@ export async function getRatingsById(fideId: string): Promise<PlayerSummary | nu
 
 export function getProfile(fideId: string): Promise<Profile> {
   return cached(`fide:profile:${fideId}`, async () => {
-    const { text } = await fetchText(`${FIDE}/profile/${fideId}`);
+    const { text } = await fetchText(`${FIDE}/profile/${fideId}`, FIDE_FETCH);
     const profile = parseProfile(text, fideId);
     if (!profile.name) throw new Error(`No FIDE player with ID ${fideId}`);
     // The profile page only shows the federation's full name; the history has the code.
@@ -129,6 +134,7 @@ export function getProfile(fideId: string): Promise<Profile> {
 export function getHistory(fideId: string): Promise<HistoryEntry[]> {
   return cached(`fide:history:${fideId}`, async () => {
     const { text } = await fetchText(`${FIDE}/a_chart_data.phtml?event=${fideId}&period=0`, {
+      ...FIDE_FETCH,
       method: "POST",
       headers: AJAX,
     });
@@ -143,7 +149,7 @@ export function getRatedEvents(fideId: string, period: string, type: RatingType)
   return cached(`fide:calc:${fideId}:${period}:${type}`, async () => {
     const { text } = await fetchText(
       `${FIDE}/a_indv_calculations.php?id_number=${fideId}&rating_period=${period}-01&t=${TYPE_CODE[type]}`,
-      { headers: AJAX },
+      { ...FIDE_FETCH, headers: AJAX },
     );
     return parseCalculations(text);
   });

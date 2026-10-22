@@ -10,6 +10,7 @@ export type CrSearchRow = {
   snr: string;
   playerName: string;
   fideId: string;
+  fed: string;
   tournament: string;
   endDate: string; // YYYY-MM-DD
   rounds: number;
@@ -116,6 +117,7 @@ export function parseSearchResults(html: string): CrSearchRow[] {
       snr: m[2],
       playerName: cell("Name"),
       fideId: cell("FideID"),
+      fed: cell("FED"),
       tournament: cell("Tournament"),
       endDate: end,
       rounds: parseInt(cell("Rd."), 10) || 0,
@@ -249,18 +251,70 @@ export function parseTournamentInfo(html: string, tnr: string): CrTournamentInfo
 
 // ---------- network ----------
 
+/** Replay the ASP.NET player-search form with the given fields. */
+async function playerSearch(fields: Record<string, string>): Promise<CrSearchRow[]> {
+  const first = await fetchText(SEARCH_URL);
+  const form = formFields(cheerio.load(first.text));
+  Object.assign(form, fields, {
+    ctl00$P1$combo_anzahl_zeilen: "1", // 250 rows
+    ctl00$P1$cb_suchen: "Search",
+  });
+  const res = await fetchText(SEARCH_URL, { form, cookie: cookieHeader(first.cookies) });
+  return parseSearchResults(res.text);
+}
+
 export function searchByFideId(fideId: string): Promise<CrSearchRow[]> {
   return cached(`cr:search:${fideId}`, async () => {
-    const first = await fetchText(SEARCH_URL);
-    const form = formFields(cheerio.load(first.text));
-    Object.assign(form, {
+    const rows = await playerSearch({
       ctl00$P1$txt_fideID: fideId,
       ctl00$P1$combo_Sort: "2", // FIDE-ID, end date descending
-      ctl00$P1$combo_anzahl_zeilen: "1", // 250 rows
-      ctl00$P1$cb_suchen: "Search",
     });
-    const res = await fetchText(SEARCH_URL, { form, cookie: cookieHeader(first.cookies) });
-    return parseSearchResults(res.text).filter((r) => r.fideId === fideId);
+    return rows.filter((r) => r.fideId === fideId);
+  });
+}
+
+export type CrPlayer = { fideId: string; name: string; fed: string; tournaments: number; lastPlayed: string };
+
+/** Group search rows (one per tournament) into players with a FIDE ID, most active first. */
+export function groupPlayers(rows: CrSearchRow[]): CrPlayer[] {
+  const byId = new Map<string, CrPlayer>();
+  for (const r of rows) {
+    if (!/^\d+$/.test(r.fideId) || r.fideId === "0") continue;
+    const p = byId.get(r.fideId);
+    if (!p) {
+      byId.set(r.fideId, { fideId: r.fideId, name: r.playerName, fed: r.fed, tournaments: 1, lastPlayed: r.endDate });
+    } else {
+      p.tournaments++;
+      if (r.endDate > p.lastPlayed) {
+        p.lastPlayed = r.endDate;
+        p.name = r.playerName;
+        p.fed = r.fed || p.fed;
+      }
+    }
+  }
+  return [...byId.values()].sort((a, b) => b.lastPlayed.localeCompare(a.lastPlayed));
+}
+
+/**
+ * Name search on chess-results (fallback when ratings.fide.com is unreachable).
+ * Accepts "Last, First", "First Last" or just a last name.
+ */
+export function searchByName(query: string): Promise<CrPlayer[]> {
+  const q = query.trim().replace(/\s+/g, " ");
+  return cached(`cr:name:${q.toLowerCase()}`, async () => {
+    const search = (last: string, first = "") =>
+      playerSearch({ ctl00$P1$txt_nachname: last, ctl00$P1$txt_vorname: first, ctl00$P1$combo_Sort: "0" }).then(
+        groupPlayers,
+      );
+    if (q.includes(",")) {
+      const [last, first] = q.split(",").map((x) => x.trim());
+      return search(last, first);
+    }
+    const words = q.split(" ");
+    if (words.length === 1) return search(q);
+    // "Magnus Carlsen": try the last word as last name first, then the whole text.
+    const asFirstLast = await search(words.at(-1)!, words.slice(0, -1).join(" "));
+    return asFirstLast.length ? asFirstLast : search(q);
   });
 }
 

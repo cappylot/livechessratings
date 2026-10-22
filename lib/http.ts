@@ -64,12 +64,29 @@ export type FetchOptions = {
   form?: Record<string, string>;
   headers?: Record<string, string>;
   cookie?: string;
+  /** Whole-request timeout (default 30 s). */
+  timeoutMs?: number;
+  /** Retry dropped connections (default true). */
+  retry?: boolean;
+  /**
+   * After a network failure, fail every request to this host immediately for
+   * a while instead of waiting on a server that is blocking us.
+   */
+  circuitBreaker?: boolean;
 };
+
+const BREAKER_MS = 2 * 60 * 1000;
+const downUntil = new Map<string, number>();
+
+export class HostUnreachableError extends Error {}
 
 export type FetchResult = { text: string; cookies: string[]; status: number };
 
 export async function fetchText(url: string, opts: FetchOptions = {}): Promise<FetchResult> {
   const host = new URL(url).host;
+  if (opts.circuitBreaker && (downUntil.get(host) ?? 0) > Date.now()) {
+    throw new HostUnreachableError(`${host} is not reachable right now`);
+  }
   await acquire(host);
   try {
     const headers: Record<string, string> = {
@@ -90,21 +107,24 @@ export async function fetchText(url: string, opts: FetchOptions = {}): Promise<F
           method: opts.method ?? (body ? "POST" : "GET"),
           headers,
           body,
-          signal: AbortSignal.timeout(TIMEOUT_MS),
+          signal: AbortSignal.timeout(opts.timeoutMs ?? TIMEOUT_MS),
           cache: "no-store",
         });
       } catch (e) {
         // Node reports network failures as a bare "fetch failed"; the useful part
         // (ECONNRESET, UND_ERR_CONNECT_TIMEOUT, ...) is in `cause`.
         const cause = (e as { cause?: { code?: string; message?: string } }).cause;
-        const detail = cause?.code ?? cause?.message ?? (e as Error).message;
-        // ratings.fide.com sometimes drops connections; retry those, but not our own timeout.
-        if (cause?.code && RETRYABLE.has(cause.code) && attempt < RETRY_DELAYS_MS.length) {
+        const err = e as Error;
+        const detail = cause?.code ?? cause?.message ?? (err.name === "TimeoutError" ? "timed out" : err.message);
+        // Servers sometimes drop connections; retry those, but not our own timeout.
+        const retry = opts.retry ?? true;
+        if (retry && cause?.code && RETRYABLE.has(cause.code) && attempt < RETRY_DELAYS_MS.length) {
           await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
           continue;
         }
+        if (opts.circuitBreaker) downUntil.set(host, Date.now() + BREAKER_MS);
         const { pathname } = new URL(url);
-        throw new Error(`could not reach ${host}${pathname} (${detail})`);
+        throw new HostUnreachableError(`could not reach ${host}${pathname} (${detail})`);
       }
     }
     const text = await res.text();

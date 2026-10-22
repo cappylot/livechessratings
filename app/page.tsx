@@ -9,6 +9,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [players, setPlayers] = useState<PlayerSummary[]>([]);
   const [total, setTotal] = useState(0);
+  const [source, setSource] = useState<"fide" | "chess-results">("fide");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +31,7 @@ export default function Home() {
         if (!res.ok) throw new Error(data.error ?? "Search failed");
         setPlayers(data.players);
         setTotal(data.total ?? data.players.length);
+        setSource(data.source ?? "fide");
       } catch (e) {
         if ((e as Error).name !== "AbortError") setError((e as Error).message);
       } finally {
@@ -100,18 +102,25 @@ export default function Home() {
                       {p.name}
                     </span>
                     <span className="ml-2 text-sm text-muted">
-                      {p.fed} · {p.birthYear ?? "—"} · ID {p.fideId}
+                      {p.fed} · {p.lastPlayed ? `last played ${p.lastPlayed}` : (p.birthYear ?? "—")} · ID {p.fideId}
                     </span>
                   </span>
-                  <span className="flex gap-3 font-mono text-sm tabular-nums">
-                    <Rating label="Std" value={p.standard} />
-                    <Rating label="Rpd" value={p.rapid} />
-                    <Rating label="Blz" value={p.blitz} />
-                  </span>
+                  {source === "fide" && (
+                    <span className="flex gap-3 font-mono text-sm tabular-nums">
+                      <Rating label="Std" value={p.standard} />
+                      <Rating label="Rpd" value={p.rapid} />
+                      <Rating label="Blz" value={p.blitz} />
+                    </span>
+                  )}
                 </Link>
               </li>
             ))}
           </ul>
+          {source === "chess-results" && (
+            <p className="border-t border-border px-4 py-2 text-center text-xs text-muted">
+              FIDE&apos;s site isn&apos;t reachable right now, so these results come from chess-results (no ratings shown).
+            </p>
+          )}
           {total > players.length && (
             <p className="border-t border-border px-4 py-2 text-center text-sm text-muted">
               Showing {players.length} of {total} matches. Refine the name to narrow it down.

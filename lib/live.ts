@@ -124,6 +124,7 @@ async function buildTournament(
   row: CrSearchRow,
   lastList: string,
   rated: Record<RatingType, RatedEvent[]>,
+  fideAvailable: boolean,
 ): Promise<LiveTournament> {
   const base: LiveTournament = {
     tnr: row.tnr,
@@ -137,6 +138,7 @@ async function buildTournament(
     timeControl: "",
     fideEventId: null,
     status: "pending",
+    playerRating: null,
     chessResultsChange: null,
     games: [],
   };
@@ -150,6 +152,7 @@ async function buildTournament(
     base.timeControl = info.timeControl;
     base.fideEventId = info.fideEventId;
     base.chessResultsChange = card.fideChange;
+    base.playerRating = card.ratingInternational;
     base.type = classifyTimeControl(info.statedType, base.name, info.timeControl);
 
     if (info.isTest || /\btest\d*\b/i.test(base.name))
@@ -181,6 +184,9 @@ async function buildTournament(
     } else if (base.endDate < `${previousMonth(lastList)}-01`) {
       status = "old";
       reason = "Ended before the previous rating list";
+    } else if (!fideAvailable && !recent) {
+      status = "rated";
+      reason = "Ended before the latest list, so probably already rated (FIDE couldn't be checked)";
     } else if (base.endDate < shiftDays(`${lastList}-01`, -LATE_REPORT_DAYS)) {
       status = "not-fide";
       reason = "Not in the latest FIDE list although it ended before it — probably not FIDE-rated";
@@ -197,30 +203,28 @@ async function buildTournament(
 
 export async function buildLive(fideId: string): Promise<LiveResponse> {
   const warnings: string[] = [];
-  // ratings.fide.com drops connections under load, so ask it as little as possible:
-  // the history has the official ratings, the profile only adds the birth year.
+  // ratings.fide.com blocks cloud IPs at times, so ask it as little as possible: the
+  // history has the official ratings, the profile only adds the birth year. Without
+  // FIDE, fall back to what chess-results knows.
   const history = await getHistory(fideId).catch(() => [] as HistoryEntry[]);
   const latest = history.at(-1);
-  const profile = await getProfile(fideId).catch(() => null);
-  if (!latest && !profile) throw new Error("Could not load the player's ratings from FIDE");
-  if (!profile) warnings.push("FIDE profile unavailable; the junior K-factor rule could not be checked.");
+  const profile = latest ? await getProfile(fideId).catch(() => null) : null;
+  const fideAvailable = !!latest;
+  if (latest && !profile) warnings.push("FIDE profile unavailable; the junior K-factor rule could not be checked.");
 
+  // FIDE publishes a new list on the 1st of every month.
   const lastList = latest?.period ?? today().slice(0, 7);
   const windowStart = `${previousMonth(lastList)}-01`;
 
   const official: Record<RatingType, number | null> = latest
     ? { standard: latest.standard, rapid: latest.rapid, blitz: latest.blitz }
-    : { standard: profile!.standard, rapid: profile!.rapid, blitz: profile!.blitz };
-  const year = new Date().getFullYear();
-  const k = Object.fromEntries(
-    RATING_TYPES.map((t) => [t, kFactor(t, official[t], history, profile?.birthYear ?? null, year)]),
-  ) as Record<RatingType, KInfo>;
+    : { standard: null, rapid: null, blitz: null };
 
   // Tournaments FIDE has already rated in the last two lists.
   const rated = Object.fromEntries(
     await Promise.all(
       RATING_TYPES.map(async (t) => {
-        if (official[t] === null) return [t, []];
+        if (!fideAvailable || official[t] === null) return [t, []];
         const lists = await Promise.all(
           [lastList, previousMonth(lastList)].map((p) => getRatedEvents(fideId, p, t).catch(() => [])),
         );
@@ -247,8 +251,29 @@ export async function buildLive(fideId: string): Promise<LiveResponse> {
     candidates.length = MAX_TOURNAMENTS;
   }
 
-  const tournaments = await Promise.all(candidates.map((r) => buildTournament(r, lastList, rated)));
+  const tournaments = await Promise.all(candidates.map((r) => buildTournament(r, lastList, rated, fideAvailable)));
   tournaments.sort((a, b) => b.endDate.localeCompare(a.endDate));
 
-  return { fideId, lastList, official, k, tournaments, warnings };
+  if (!fideAvailable) {
+    // A tournament that started after the latest list was rated from the
+    // published rating, which the player's chess-results card shows.
+    for (const t of RATING_TYPES) {
+      const source = tournaments.find(
+        (x) => x.type === t && x.playerRating && x.status !== "test" && (x.startDate ?? x.endDate) >= `${lastList}-01`,
+      );
+      official[t] = source?.playerRating ?? null;
+    }
+    warnings.push(
+      "ratings.fide.com is not reachable from this server right now. Official ratings are taken from the player's " +
+        "chess-results entries, tournaments that ended before this month are assumed to be rated already, and " +
+        "the K-factor is estimated.",
+    );
+  }
+
+  const year = new Date().getFullYear();
+  const k = Object.fromEntries(
+    RATING_TYPES.map((t) => [t, kFactor(t, official[t], history, profile?.birthYear ?? null, year)]),
+  ) as Record<RatingType, KInfo>;
+
+  return { fideId, lastList, official, k, tournaments, warnings, fideAvailable };
 }

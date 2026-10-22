@@ -10,6 +10,8 @@ export type PlayerSummary = {
   rapid: number | null;
   blitz: number | null;
   birthYear: number | null;
+  /** End date of the latest tournament on chess-results (fallback search only) */
+  lastPlayed?: string;
 };
 
 export type Profile = PlayerSummary & {
@@ -17,6 +19,8 @@ export type Profile = PlayerSummary & {
   sex: string;
   inactive: boolean;
   worldRank: number | null;
+  /** "chess-results" when FIDE was unreachable and the profile is incomplete */
+  source?: "fide" | "chess-results";
 };
 
 export type HistoryEntry = {
@@ -70,6 +74,8 @@ export type LiveTournament = {
   fideEventId: string | null;
   status: TournamentStatus;
   reason?: string;
+  /** The player's FIDE rating in this tournament, from their chess-results card */
+  playerRating: number | null;
   /** Rating change reported by chess-results ("FIDE rtg +/-"), for cross-checking */
   chessResultsChange: number | null;
   games: LiveGame[];
@@ -84,4 +90,6 @@ export type LiveResponse = {
   k: Record<RatingType, KInfo>;
   tournaments: LiveTournament[];
   warnings: string[];
+  /** false when ratings.fide.com could not be reached and chess-results data was used */
+  fideAvailable: boolean;
 };

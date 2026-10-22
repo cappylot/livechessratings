@@ -89,3 +89,11 @@ describe("classifyTimeControl", () => {
     expect(classifyTimeControl(null, "Vereinsblitzmeisterschaft", "")).toBe("blitz");
   });
 });
+
+test("groupPlayers merges one row per tournament into players", async () => {
+  const { groupPlayers } = await import("@/lib/chessResults");
+  const players = groupPlayers(parseSearchResults(fx("cr-search.html")));
+  expect(players).toHaveLength(1);
+  expect(players[0]).toMatchObject({ fideId: "16241657", name: "Albayrak, Berrak", fed: "GER", lastPlayed: "2026-09-27" });
+  expect(players[0].tournaments).toBeGreaterThan(5);
+});
